@@ -1,0 +1,152 @@
+spring:
+  application:
+    name: payment-resilience-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
+  main:
+    allow-bean-definition-overriding: false
+    banner-mode: console
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    info:
+      enabled: true
+    metrics:
+      enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+resilience4j:
+  retry:
+    instances:
+      paymentRetry:
+        maxAttempts: 3
+        waitDuration: 1000
+        retryExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+        ignoreExceptions:
+          - domain.model.PaymentFailedException
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2.0
+        maxRetryInterval: 10000
+        retryPolicy:
+          maxAttempts: 3
+          waitDuration: 1000
+        eventConsumerBufferSize: 100
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 2s
+
+  circuitbreaker:
+    instances:
+      paymentCircuitBreaker:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 2s
+        eventConsumerBufferSize: 100
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - domain.model.PaymentFailedException
+        ignoreExceptions:
+          - domain.model.CircuitBreakerOpenException
+
+  timelimiter:
+    instances:
+      paymentTimeLimiter:
+        timeoutDuration: 5s
+        cancelRunningFuture: true
+        eventConsumerBufferSize: 100
+
+  bulkhead:
+    instances:
+      paymentBulkhead:
+        maxConcurrentCalls: 10
+        maxWaitDuration: 0ms
+        eventConsumerBufferSize: 100
+        registerHealthIndicator: true
+
+logging:
+  level:
+    root: INFO
+    com.example: DEBUG
+    io.github.resilience4j: DEBUG
+    org.springframework.web: INFO
+    org.springframework.retry: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/application.log
+    max-size: 10MB
+    max-history: 30
+
+payment:
+  provider:
+    base-url: ${PAYMENT_PROVIDER_URL:http://localhost:9090}
+    connect-timeout: 5000
+    read-timeout: 10000
+    max-connections: 50
+  retry:
+    max-attempts: 3
+    initial-interval: 1000
+    multiplier: 2.0
+    max-interval: 10000
+  circuit-breaker:
+    failure-threshold: 50
+    success-threshold: 3
+    wait-duration: 30000
+  timeout:
+    default-timeout: 5000
+    critical-timeout: 3000
+  idempotency:
+    key-prefix: "PAY"
+    ttl-days: 7
+
+info:
+  app:
+    name: Payment Resilience Service
+    description: Microservice implementing resilience patterns for payment processing
+    version: 1.0.0
+  java:
+    version: ${java.version}
+  spring:
+    version: ${spring.boot.version}
